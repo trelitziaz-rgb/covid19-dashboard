@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>全球 COVID-19 疫情数据看板</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap");
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior:smooth; }
+body {
+  font-family:"Inter","Noto Sans SC",system-ui,-apple-system,sans-serif;
+  background:#0a0a12; color:#e8e8ee;
+  min-height:100vh; overflow-x:hidden;
+}
+
+/* Canvas particle background */
+#particle-canvas {
+  position:fixed; top:0; left:0; width:100%; height:100%;
+  z-index:0; pointer-events:none;
+}
+
+/* All content sits above canvas */
+.container {
+  position:relative; z-index:1;
+  max-width:1240px; margin:0 auto; padding:24px 20px 40px;
+}
+
+/* Theme toggle */
+.theme-btn {
+  position:fixed; top:20px; right:20px; z-index:100;
+  background:rgba(255,255,255,0.06); backdrop-filter:blur(12px);
+  border:1px solid rgba(255,255,255,0.08); border-radius:30px;
+  padding:8px 16px; color:#b0b0c0; cursor:pointer;
+  font-size:13px; transition:all .25s;
+  display:flex; align-items:center; gap:6px;
+}
+.theme-btn:hover { background:rgba(255,255,255,0.12); color:#e8e8ee; }
+
+/* Back to top */
+.back-top {
+  position:fixed; bottom:28px; right:28px; z-index:100;
+  width:42px; height:42px; border-radius:30px;
+  background:rgba(255,255,255,0.06); backdrop-filter:blur(12px);
+  border:1px solid rgba(255,255,255,0.08);
+  color:#b0b0c0; cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+  font-size:16px; opacity:0; visibility:hidden;
+  transition:all .3s;
+}
+.back-top.show { opacity:1; visibility:visible; }
+.back-top:hover { background:rgba(255,255,255,0.12); color:#e8e8ee; }
+
+/* Header */
+header {
+  text-align:center; padding:60px 20px 40px;
+}
+header h1 {
+  font-size:2.6em; font-weight:300; letter-spacing:-0.02em;
+  background:linear-gradient(135deg,#f0f0f8 40%,#e94560 100%);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  background-clip:text;
+  margin-bottom:10px;
+}
+header p {
+  color:rgba(255,255,255,0.35);
+  font-size:14px; font-weight:400; letter-spacing:0.3px;
+}
+
+/* Nav */
+.nav-bar {
+  display:flex; gap:4px; flex-wrap:wrap; justify-content:center;
+  margin-bottom:40px; padding:6px;
+  background:rgba(255,255,255,0.04); backdrop-filter:blur(16px);
+  border-radius:40px; border:1px solid rgba(255,255,255,0.06);
+  max-width:540px; margin-left:auto; margin-right:auto;
+}
+.nav-bar a {
+  color:rgba(255,255,255,0.4); text-decoration:none;
+  padding:7px 18px; border-radius:30px;
+  font-size:13px; font-weight:500;
+  transition:all .25s; white-space:nowrap;
+}
+.nav-bar a:hover { color:#e8e8ee; background:rgba(255,255,255,0.06); }
+.nav-bar a.active {
+  color:#e8e8ee; background:rgba(233,69,96,0.25);
+  box-shadow:0 0 20px rgba(233,69,96,0.08);
+}
+
+/* Stats grid */
+.stats-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+  gap:12px; margin-bottom:44px;
+}
+.stat-card {
+  background:rgba(255,255,255,0.03); backdrop-filter:blur(16px);
+  border:1px solid rgba(255,255,255,0.06);
+  border-radius:16px; padding:20px 16px; text-align:center;
+  transition:all .35s; cursor:default; position:relative;
+}
+.stat-card:hover {
+  background:rgba(255,255,255,0.06);
+  transform:translateY(-3px);
+  box-shadow:0 12px 32px rgba(0,0,0,0.4);
+}
+.stat-card .num {
+  font-size:1.7em; font-weight:600; letter-spacing:-0.01em;
+  margin-bottom:4px;
+}
+.stat-card .lbl {
+  font-size:12px; color:rgba(255,255,255,0.35); font-weight:400;
+  letter-spacing:0.2px;
+}
+.stat-card .full-val {
+  display:none; position:absolute; bottom:-6px; left:50%;
+  transform:translateX(-50%) translateY(100%);
+  background:rgba(20,20,30,0.95); backdrop-filter:blur(12px);
+  border:1px solid rgba(255,255,255,0.08);
+  padding:5px 12px; border-radius:8px; font-size:11px;
+  white-space:nowrap; z-index:10; color:rgba(255,255,255,0.6);
+}
+.stat-card:hover .full-val { display:block; }
+.stat-card.red .num { color:#e94560; }
+.stat-card.gray .num { color:#8899b0; }
+.stat-card.green .num { color:#4ecdc4; }
+.stat-card.gold .num { color:#f0b34b; }
+.stat-card.white .num { color:#e8e8ee; }
+
+/* Section title */
+.sec-title {
+  font-size:18px; font-weight:600; letter-spacing:-0.01em;
+  margin:40px 0 18px; color:#e8e8ee;
+  display:flex; align-items:center; gap:10px;
+}
+.sec-title .tag {
+  display:inline-block; padding:3px 10px; border-radius:6px;
+  font-size:11px; font-weight:600; letter-spacing:0.3px;
+  background:rgba(233,69,96,0.15); color:#e94560;
+}
+
+/* Filter tabs */
+.filter-row {
+  display:flex; gap:6px; margin-bottom:18px;
+}
+.filter-row button {
+  padding:5px 14px; border-radius:30px; border:1px solid rgba(255,255,255,0.08);
+  background:rgba(255,255,255,0.03); color:rgba(255,255,255,0.4);
+  font-size:12px; cursor:pointer; transition:all .2s;
+  font-family:inherit;
+}
+.filter-row button:hover { background:rgba(255,255,255,0.06); color:#e8e8ee; }
+.filter-row button.active {
+  background:rgba(233,69,96,0.15); border-color:rgba(233,69,96,0.3); color:#e94560;
+}
+
+/* Chart grid */
+.grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(560px,1fr));
+  gap:16px; margin-bottom:16px;
+}
+.card {
+  background:rgba(255,255,255,0.03); backdrop-filter:blur(16px);
+  border:1px solid rgba(255,255,255,0.06);
+  border-radius:16px; overflow:hidden;
+  transition:all .35s;
+  opacity:0; transform:translateY(24px);
+}
+.card.show { opacity:1; transform:translateY(0); }
+.card.hide { display:none; }
+.card:hover { background:rgba(255,255,255,0.05); box-shadow:0 8px 28px rgba(0,0,0,0.3); }
+.card .hdr {
+  padding:14px 18px; font-size:13px; font-weight:500;
+  color:rgba(255,255,255,0.6);
+  border-bottom:1px solid rgba(255,255,255,0.04);
+}
+.card img, .card iframe { width:100%; display:block; }
+.card iframe { border:none; height:580px; }
+.card.map iframe { height:480px; }
+.card.full { grid-column:1/-1; }
+
+/* Table */
+.table-box {
+  background:rgba(255,255,255,0.03); backdrop-filter:blur(16px);
+  border:1px solid rgba(255,255,255,0.06);
+  border-radius:16px; overflow:hidden; margin-bottom:44px;
+}
+.table-top {
+  padding:14px 18px; display:flex;
+  justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;
+  border-bottom:1px solid rgba(255,255,255,0.04);
+}
+.table-top span { font-size:13px; font-weight:500; color:rgba(255,255,255,0.6); }
+.table-top input {
+  background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08);
+  border-radius:10px; padding:7px 14px; color:#e8e8ee;
+  font-size:12px; width:180px; outline:none; font-family:inherit;
+}
+.table-top input:focus { border-color:rgba(233,69,96,0.3); }
+.wrap { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th {
+  padding:10px 16px; text-align:left; font-weight:500;
+  border-bottom:1px solid rgba(255,255,255,0.04);
+  color:rgba(255,255,255,0.35); cursor:pointer; user-select:none;
+  transition:color .2s; font-size:11px; text-transform:uppercase;
+  letter-spacing:0.5px;
+}
+th:hover { color:rgba(255,255,255,0.6); }
+th .arr { margin-left:3px; font-size:9px; opacity:0; }
+th.sort-a .arr, th.sort-d .arr { opacity:0.6; }
+td {
+  padding:9px 16px; border-bottom:1px solid rgba(255,255,255,0.03);
+  color:rgba(255,255,255,0.7);
+}
+tr:last-child td { border-bottom:none; }
+tr:hover td { background:rgba(255,255,255,0.03); }
+.num { text-align:right; font-variant-numeric:tabular-nums; }
+.bar-c { position:relative; }
+.bar-c .bar {
+  position:absolute; left:0; top:0; height:100%;
+  background:#e94560; opacity:0.07; border-radius:0;
+}
+.bar-c .v { position:relative; z-index:1; }
+
+footer {
+  text-align:center; padding:40px 0 20px;
+  color:rgba(255,255,255,0.2); font-size:12px;
+}
+footer a { color:rgba(78,205,196,0.5); text-decoration:none; }
+footer a:hover { color:rgba(78,205,196,0.8); }
+
+/* Light theme overrides */
+body.light { background:#f2f2f6; color:#1a1a2e; }
+body.light header h1 {
+  background:linear-gradient(135deg,#222240 40%,#e94560 100%);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+body.light header p { color:rgba(0,0,0,0.3); }
+body.light .nav-bar { background:rgba(255,255,255,0.7); border-color:rgba(0,0,0,0.06); }
+body.light .nav-bar a { color:rgba(0,0,0,0.4); }
+body.light .nav-bar a:hover { color:#1a1a2e; background:rgba(0,0,0,0.04); }
+body.light .nav-bar a.active { color:#1a1a2e; background:rgba(233,69,96,0.12); }
+body.light .stat-card, body.light .card, body.light .table-box, body.light .theme-btn, body.light .back-top {
+  background:rgba(255,255,255,0.7); border-color:rgba(0,0,0,0.06);
+}
+body.light .stat-card:hover, body.light .card:hover { background:rgba(255,255,255,0.85); }
+body.light .stat-card .lbl { color:rgba(0,0,0,0.35); }
+body.light .stat-card .full-val { background:rgba(255,255,255,0.95); border-color:rgba(0,0,0,0.08); color:rgba(0,0,0,0.5); }
+body.light .card .hdr { color:rgba(0,0,0,0.5); }
+body.light .sec-title { color:#1a1a2e; }
+body.light .filter-row button { background:rgba(0,0,0,0.03); border-color:rgba(0,0,0,0.06); color:rgba(0,0,0,0.4); }
+body.light .filter-row button:hover { color:#1a1a2e; }
+body.light .table-top input { background:rgba(0,0,0,0.04); border-color:rgba(0,0,0,0.08); color:#1a1a2e; }
+body.light th { color:rgba(0,0,0,0.35); }
+body.light td { color:rgba(0,0,0,0.6); }
+body.light tr:hover td { background:rgba(0,0,0,0.02); }
+body.light .theme-btn, body.light .back-top { background:rgba(255,255,255,0.7); border-color:rgba(0,0,0,0.06); color:rgba(0,0,0,0.4); }
+body.light .theme-btn:hover, body.light .back-top:hover { background:rgba(255,255,255,0.85); color:#1a1a2e; }
+body.light footer { color:rgba(0,0,0,0.2); }
+
+@media (max-width:700px) {
+  .grid { grid-template-columns:1fr; }
+  header h1 { font-size:1.6em; }
+  .stat-card .num { font-size:1.3em; }
+  .nav-bar { border-radius:20px; padding:4px; gap:2px; max-width:100%; }
+  .nav-bar a { font-size:12px; padding:6px 12px; }
+  .stats-grid { grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); }
+}
+</style>
+</head>
+<body>
+<canvas id="particle-canvas"></canvas>
+<button class="theme-btn" onclick="toggleTheme()"><span id="themeIcon">&#9681;</span> <span id="themeLabel">深色</span></button>
+<button class="back-top" onclick="window.scrollTo({top:0,behavior:'smooth'})">&#8593;</button>
+
+<div class="container">
+<header>
+  <h1>COVID-19 全球疫情</h1>
+  <p>数据来源：约翰霍普金斯大学 CSSE &bull; 截至 2023-03-09</p>
+</header>
+
+<nav class="nav-bar">
+  <a href="#overview" class="active">概览</a>
+  <a href="#table-section">排行</a>
+  <a href="#charts-static">图表</a>
+  <a href="#charts-interactive">交互</a>
+  <a href="#map">地图</a>
+</nav>
+
+<div class="stats-grid" id="overview">
+  <div class="stat-card red"><div class="num">6.72 亿</div><div class="lbl">累计确诊</div><div class="full-val">671,625,714</div></div>
+  <div class="stat-card gray"><div class="num">682 万</div><div class="lbl">累计死亡</div><div class="full-val">6,824,508</div></div>
+  <div class="stat-card green"><div class="num">1.29 亿</div><div class="lbl">累计治愈</div><div class="full-val">129,357,529</div></div>
+  <div class="stat-card gold"><div class="num">1.02%</div><div class="lbl">病死率</div></div>
+  <div class="stat-card white"><div class="num">197</div><div class="lbl">受影响国家</div></div>
+  <div class="stat-card white"><div class="num">2020–2023</div><div class="lbl">数据时段</div></div>
+</div>
+
+<div class="table-box" id="table-section">
+  <div class="table-top">
+    <span>确诊数 TOP20 国家</span>
+    <input type="text" id="tableSearch" placeholder="搜索国家..." oninput="filterTable()">
+  </div>
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th onclick="sortTable('country')">国家 <span class="arr">&#9651;</span></th>
+          <th class="num" onclick="sortTable('confirmed')">确诊 <span class="arr">&#9651;</span></th>
+          <th class="num" onclick="sortTable('deaths')">死亡 <span class="arr">&#9651;</span></th>
+          <th class="num" onclick="sortTable('mortality')">病死率 <span class="arr">&#9651;</span></th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="sec-title" id="charts-static"><span class="tag">静态</span>可视化图表</div>
+<div class="filter-row">
+  <button class="active" onclick="filterCharts('all',this)">全部</button>
+  <button onclick="filterCharts('trend',this)">趋势</button>
+  <button onclick="filterCharts('compare',this)">对比</button>
+</div>
+<div class="grid" id="chartGrid">
+  <div class="card full" data-cat="trend">
+    <div class="hdr">全球疫情发展趋势</div>
+    <img src="chart_global_trends.png" alt="" style="max-height:800px;object-fit:contain;background:rgba(255,255,255,0.9);">
+  </div>
+  <div class="card full" data-cat="compare">
+    <div class="hdr">TOP10 国家分析及全球分布</div>
+    <img src="chart_top10_countries.png" alt="" style="max-height:800px;object-fit:contain;background:rgba(255,255,255,0.9);">
+  </div>
+  <div class="card" data-cat="trend">
+    <div class="hdr">主要国家累计确诊与 7 日新增</div>
+    <img src="chart_major_countries.png" alt="" style="max-height:520px;object-fit:contain;background:rgba(255,255,255,0.9);">
+  </div>
+  <div class="card" data-cat="compare">
+    <div class="hdr">主要国家疫情相关性热力图</div>
+    <img src="chart_correlation_heatmap.png" alt="" style="max-height:520px;object-fit:contain;background:rgba(255,255,255,0.9);">
+  </div>
+  <div class="card" data-cat="compare">
+    <div class="hdr">TOP20 国家病死率排行</div>
+    <img src="chart_mortality_rate.png" alt="" style="max-height:520px;object-fit:contain;background:rgba(255,255,255,0.9);">
+  </div>
+</div>
+
+<div class="sec-title" id="charts-interactive"><span class="tag">交互</span>交互式图表</div>
+<div class="grid">
+  <div class="card full"><div class="hdr">全球确诊 vs 死亡趋势</div><iframe src="chart_global_trend_interactive.html" loading="lazy"></iframe></div>
+  <div class="card full"><div class="hdr">确诊数 vs 死亡数气泡图</div><iframe src="chart_bubble_scatter.html" loading="lazy"></iframe></div>
+  <div class="card full"><div class="hdr">TOP10 确诊数动态排名</div><iframe src="chart_animated_bar_race.html" loading="lazy"></iframe></div>
+</div>
+
+<div class="sec-title" id="map"><span class="tag">地图</span>世界疫情地图</div>
+<div class="grid">
+  <div class="card full map"><div class="hdr">全球 COVID-19 热力图</div><iframe src="chart_global_heatmap.html" loading="lazy"></iframe></div>
+</div>
+
+<footer>
+  <p>数据：<a href="https://github.com/CSSEGISandData/COVID-19" target="_blank">约翰霍普金斯大学 CSSE</a></p>
+</footer>
+</div>
+
+<script>
+const DATA = [{"country": "United States", "confirmed": 103802702, "deaths": 1123836, "mortality": 1.08}, {"country": "India", "confirmed": 44690738, "deaths": 530779, "mortality": 1.19}, {"country": "France", "confirmed": 39866718, "deaths": 166176, "mortality": 0.42}, {"country": "Germany", "confirmed": 38249060, "deaths": 168935, "mortality": 0.44}, {"country": "Brazil", "confirmed": 37076053, "deaths": 699276, "mortality": 1.89}, {"country": "Japan", "confirmed": 33320438, "deaths": 72997, "mortality": 0.22}, {"country": "South Korea", "confirmed": 30615522, "deaths": 34093, "mortality": 0.11}, {"country": "Italy", "confirmed": 25603510, "deaths": 188322, "mortality": 0.74}, {"country": "United Kingdom", "confirmed": 24658705, "deaths": 220721, "mortality": 0.9}, {"country": "Russia", "confirmed": 22075858, "deaths": 388478, "mortality": 1.76}, {"country": "Turkey", "confirmed": 17042722, "deaths": 101492, "mortality": 0.6}, {"country": "Spain", "confirmed": 13770429, "deaths": 119479, "mortality": 0.87}, {"country": "Vietnam", "confirmed": 11526994, "deaths": 43186, "mortality": 0.37}, {"country": "Australia", "confirmed": 11399460, "deaths": 19574, "mortality": 0.17}, {"country": "Argentina", "confirmed": 10044957, "deaths": 130472, "mortality": 1.3}, {"country": "Taiwan", "confirmed": 9970937, "deaths": 17672, "mortality": 0.18}, {"country": "Netherlands", "confirmed": 8712835, "deaths": 23705, "mortality": 0.27}, {"country": "Iran", "confirmed": 7572311, "deaths": 144933, "mortality": 1.91}, {"country": "Mexico", "confirmed": 7483444, "deaths": 333188, "mortality": 4.45}, {"country": "Indonesia", "confirmed": 6738225, "deaths": 160941, "mortality": 2.39}];
+
+let sortKey = "confirmed", sortDir = -1;
+let origData = [...DATA];
+
+function toggleTheme() {
+  const body = document.body;
+  const isLight = body.classList.toggle("light");
+  document.getElementById("themeIcon").textContent = isLight ? "\u2601" : "\u2661";
+  document.getElementById("themeLabel").textContent = isLight ? "\u4eae\u8272" : "\u6df1\u8272";
+}
+
+function fmtNum(n) { return n.toLocaleString("en-US"); }
+
+function renderTable(data) {
+  const tb = document.getElementById("tableBody");
+  const maxC = Math.max(...data.map(d => d.confirmed));
+  let h = "";
+  data.forEach((d, i) => {
+    const pct = (d.confirmed / maxC * 100).toFixed(1);
+    h += "<tr><td>" + (i+1) + "</td><td>" + d.country + "</td>"
+      + '<td class="num bar-c"><div class="bar" style="width:' + pct + '%"></div><span class="v">' + fmtNum(d.confirmed) + "</span></td>"
+      + '<td class="num">' + fmtNum(d.deaths) + "</td>"
+      + '<td class="num">' + d.mortality.toFixed(2) + "%</td></tr>";
+  });
+  tb.innerHTML = h;
+}
+
+function filterTable() {
+  const q = document.getElementById("tableSearch").value.toLowerCase();
+  renderTable(origData.filter(d => d.country.toLowerCase().includes(q)));
+}
+
+function sortTable(key) {
+  document.querySelectorAll("th").forEach(t => t.classList.remove("sort-a","sort-d"));
+  if (key === sortKey) sortDir *= -1;
+  else { sortKey = key; sortDir = key === "country" ? 1 : -1; }
+  origData.sort((a,b) => ((typeof a[key] === "string") ? a[key].localeCompare(b[key]) : a[key] - b[key]) * sortDir);
+  const idx = Array.from(document.querySelectorAll("th")).findIndex(th => {
+    const t = th.textContent.replace(/\u25b1/g,"").trim();
+    if (key==="country") return t.includes("\u56fd");
+    if (key==="confirmed") return t.includes("\u786e");
+    if (key==="deaths") return t.includes("\u6b7b");
+    if (key==="mortality") return t.includes("\u75c5");
+    return false;
+  });
+  if (idx>=0) document.querySelectorAll("th")[idx].classList.add(sortDir>0?"sort-a":"sort-d");
+  filterTable();
+}
+
+function filterCharts(cat, btn) {
+  document.querySelectorAll(".filter-row button").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  document.querySelectorAll(".card[data-cat]").forEach(c => c.classList.toggle("hide", cat!=="all" && c.dataset.cat!==cat));
+}
+
+// Scroll reveal
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add("show"); });
+}, { threshold:0.08 });
+document.querySelectorAll(".card").forEach(el => obs.observe(el));
+
+// Nav highlight on scroll
+const secs = ["overview","table-section","charts-static","charts-interactive","map"];
+const links = document.querySelectorAll(".nav-bar a");
+window.addEventListener("scroll", () => {
+  const y = window.scrollY + 140;
+  let idx = 0;
+  secs.forEach((id,i) => { const el = document.getElementById(id); if (el && el.offsetTop <= y) idx = i; });
+  links.forEach((a,i) => a.classList.toggle("active", i===idx));
+  document.querySelector(".back-top").classList.toggle("show", window.scrollY > 400);
+});
+
+// Particle system
+const c = document.getElementById("particle-canvas");
+const ctx = c.getContext("2d");
+let W, H, particles = [], mouse = {x:null,y:null};
+const COUNT = 90, MAX_DIST = 140;
+
+function resize() {
+  W = c.width = window.innerWidth;
+  H = c.height = window.innerHeight;
+}
+window.addEventListener("resize", resize);
+window.addEventListener("mousemove", e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+window.addEventListener("mouseleave", () => { mouse.x = null; mouse.y = null; });
+
+function Particle() {
+  this.x = Math.random() * W;
+  this.y = Math.random() * H;
+  this.vx = (Math.random() - 0.5) * 0.4;
+  this.vy = (Math.random() - 0.5) * 0.4;
+  this.r = Math.random() * 1.8 + 0.5;
+}
+Particle.prototype.update = function() {
+  this.x += this.vx; this.y += this.vy;
+  if (this.x < 0 || this.x > W) this.vx *= -1;
+  if (this.y < 0 || this.y > H) this.vy *= -1;
+  // Mouse interaction
+  if (mouse.x != null) {
+    const dx = this.x - mouse.x, dy = this.y - mouse.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < 180) {
+      const force = (180 - dist) / 180 * 0.6;
+      this.x += (dx/dist) * force;
+      this.y += (dy/dist) * force;
+    }
+  }
+};
+Particle.prototype.draw = function() {
+  ctx.beginPath();
+  ctx.arc(this.x, this.y, this.r, 0, Math.PI*2);
+  ctx.fillStyle = "rgba(233,69,96," + (0.15 + this.r/6) + ")";
+  ctx.fill();
+};
+
+function init() {
+  resize();
+  particles = [];
+  for (let i = 0; i < COUNT; i++) particles.push(new Particle());
+}
+
+function animate() {
+  ctx.clearRect(0, 0, W, H);
+  for (let p of particles) {
+    p.update();
+    p.draw();
+  }
+  // Draw connections
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i+1; j < particles.length; j++) {
+      const dx = particles[i].x - particles[j].x;
+      const dy = particles[i].y - particles[j].y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < MAX_DIST) {
+        ctx.beginPath();
+        ctx.moveTo(particles[i].x, particles[i].y);
+        ctx.lineTo(particles[j].x, particles[j].y);
+        ctx.strokeStyle = "rgba(233,69,96," + ((1 - dist/MAX_DIST) * 0.08) + ")";
+        ctx.lineWidth = 0.6;
+        ctx.stroke();
+      }
+    }
+  }
+  requestAnimationFrame(animate);
+}
+
+init();
+animate();
+
+renderTable(origData);
+</script>
+</body>
+</html>
